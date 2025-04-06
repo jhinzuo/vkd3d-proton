@@ -1,10 +1,15 @@
 name: Build ARM64EC on Linux
 
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [ master ] # Adjust to your specific arm64ec development branch
+  pull_request:
+    branches: [ master ] # Adjust to your specific arm64ec development branch
+  workflow_dispatch:
 
 jobs:
   build-arm64ec:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest # Using 'ubuntu-latest' is generally recommended
 
     steps:
     - name: Checkout code
@@ -16,7 +21,7 @@ jobs:
       run: |
         sudo dpkg --add-architecture arm64
         sudo apt update
-        sudo apt install -y g++-12-aarch64-linux-gnu mingw-w64-x86-64
+        sudo apt install -y g++-12-aarch64-linux-gnu mingw-w64-x86-64 llvm-dev libclang-dev
 
     - name: Create build directory
       run: mkdir build-arm64ec
@@ -33,3 +38,9 @@ jobs:
 
     - name: Build arm64ec
       run: ninja -C build-arm64ec
+
+    - name: Upload build artifacts (optional)
+      uses: actions/upload-artifact@v4
+      with:
+        name: vkd3d-proton-arm64ec
+        path: build-arm64ec/vkd3d*
