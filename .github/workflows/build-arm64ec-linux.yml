@@ -25,7 +25,7 @@ jobs:
       # Step 2: Set up the specific ARM64EC cross-compiler toolchain
       - name: Set up ARM64EC MinGW Toolchain (llvm-mingw)
         # Using a specific action version tag like v1.9 instead of the floating v1
-        uses: mstorsjo/llvm-mingw-action@v1.9 # <-- Updated Line
+        uses: mstorsjo/llvm-mingw-action@v4 # <-- Updated Line
         with:
           arch: arm64ec
           # This specific action version will download a recent stable toolchain build.
