@@ -24,10 +24,12 @@ jobs:
 
       # Step 2: Set up the specific ARM64EC cross-compiler toolchain
       - name: Set up ARM64EC MinGW Toolchain (llvm-mingw)
-        uses: mstorsjo/llvm-mingw-action@v1
+        # Using a specific action version tag like v1.9 instead of the floating v1
+        uses: mstorsjo/llvm-mingw-action@v1.9 # <-- Updated Line
         with:
-          arch: arm64ec # Specify the ARM64EC target architecture
-          # This action downloads the toolchain and adds its bin directory to the PATH
+          arch: arm64ec
+          # This specific action version will download a recent stable toolchain build.
+          # Check the action's README if you need to pin a specific toolchain DATE version.
 
       # Step 3: Install host build dependencies needed by Meson and the build process
       # Note: glslang-tools is NOT included as 'enable_extras' defaults to false
