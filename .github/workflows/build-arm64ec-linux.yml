@@ -1,46 +1,128 @@
-name: Build ARM64EC on Linux
+# .github/workflows/build-arm64ec.yml
+
+name: Build vkd3d-proton (ARM64EC)
 
 on:
   push:
-    branches: [ master ] # Adjust to your specific arm64ec development branch
+    branches: [ main, master ] # Adjust to your main branch name
   pull_request:
-    branches: [ master ] # Adjust to your specific arm64ec development branch
-  workflow_dispatch:
+    branches: [ main, master ] # Adjust to your main branch name
+  workflow_dispatch: # Allows manual triggering via the Actions tab
 
 jobs:
-  build-arm64ec:
-    runs-on: ubuntu-latest # Using 'ubuntu-latest' is generally recommended
+  build_arm64ec:
+    name: Build vkd3d-proton for ARM64EC
+    # Use a standard GitHub Actions Linux runner for cross-compilation
+    runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
+      # Step 1: Check out the source code repository
+      - name: Checkout vkd3d-proton repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive # Required for dependencies like dxil-spirv, headers
 
-    - name: Install dependencies for arm64ec build
-      run: |
-        sudo dpkg --add-architecture arm64
-        sudo apt update
-        sudo apt install -y g++-12-aarch64-linux-gnu mingw-w64-x86-64 llvm-dev libclang-dev
+      # Step 2: Set up the specific ARM64EC cross-compiler toolchain
+      - name: Set up ARM64EC MinGW Toolchain (llvm-mingw)
+        uses: mstorsjo/llvm-mingw-action@v1
+        with:
+          arch: arm64ec # Specify the ARM64EC target architecture
+          # This action downloads the toolchain and adds its bin directory to the PATH
 
-    - name: Create build directory
-      run: mkdir build-arm64ec
+      # Step 3: Install host build dependencies needed by Meson and the build process
+      # Note: glslang-tools is NOT included as 'enable_extras' defaults to false
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            meson \
+            ninja-build \
+            wine64 \
+            pkg-config
 
-    - name: Configure arm64ec build
-      run: |
-        export AR="ar -rcs"
-        export AS="as"
-        export CC="g++-12-aarch64-linux-gnu"
-        export CXX="g++-12-aarch64-linux-gnu"
-        export WINDRES="llvm-windres"
-        export RC="llvm-windres"
-        meson setup -Denable_tests=True -Denable_extras=True --cross-file=build-win64.txt --buildtype release build-arm64ec
+      # Step 4: Create the Meson cross-file required for ARM64EC builds
+      # This tells Meson which compilers/tools to use and defines the target system.
+      - name: Create Meson Cross File (arm64ec.build)
+        run: |
+          cat << EOF > arm64ec.build
+          [binaries]
+          # Tool names match those provided by llvm-mingw for the arm64ec target
+          c = 'arm64-w64-mingw32-clang'
+          cpp = 'arm64-w64-mingw32-clang++'
+          ar = 'llvm-ar'
+          ranlib = 'llvm-ranlib'
+          strip = 'llvm-strip'
+          windres = 'arm64-w64-mingw32-windres' # Resource compiler
+          dlltool = 'arm64-w64-mingw32-dlltool'
+          # pkgconfig = 'arm64-w64-mingw32-pkg-config' # Using host pkg-config with PKG_CONFIG_PATH is generally preferred
 
-    - name: Build arm64ec
-      run: ninja -C build-arm64ec
+          [host_machine]
+          system = 'windows'
+          cpu_family = 'aarch64'
+          cpu = 'arm64ec' # Explicitly target ARM64EC
+          endian = 'little'
 
-    - name: Upload build artifacts (optional)
-      uses: actions/upload-artifact@v4
-      with:
-        name: vkd3d-proton-arm64ec
-        path: build-arm64ec/vkd3d*
+          [properties]
+          # Tells meson to build libraries that can be loaded by windows
+          needs_exe_wrapper = true
+          # sys_root = '/path/to/toolchain/sysroot' # We handle pkg-config via env variable below
+
+          [built-in options]
+          # Pass target triple arguments for clang when cross-compiling
+          c_args = ['-target', 'arm64ec-windows-gnu']
+          c_link_args = ['-target', 'arm64ec-windows-gnu']
+          cpp_args = ['-target', 'arm64ec-windows-gnu']
+          cpp_link_args = ['-target', 'arm64ec-windows-gnu']
+          EOF
+        working-directory: ${{ github.workspace }} # Create the file in the repo root
+
+      # Step 5: Configure the build using Meson
+      - name: Configure build with Meson
+        run: |
+          # Set a WINEPREFIX for any Wine tools that might be invoked
+          export WINEPREFIX=$HOME/.wine_arm64ec_build
+
+          # Dynamically find the toolchain's sysroot path installed by the action
+          TOOLCHAIN_PATH=$(dirname $(which arm64-w64-mingw32-clang))
+          SYSROOT_PATH=$(realpath "$TOOLCHAIN_PATH/../arm64-w64-mingw32")
+
+          # Point pkg-config to the libraries within the cross-compiler's sysroot
+          export PKG_CONFIG_PATH="$SYSROOT_PATH/lib/pkgconfig"
+          echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
+
+          # Run meson setup: specify build dir, cross file, and desired options
+          # Using buildtype=release and disabling tests matches defaults/common practice
+          meson setup build.arm64ec --cross-file arm64ec.build \
+            -Dbuildtype=release \
+            -Dbuild_tests=false \
+            -Denable_extras=false # Explicitly match default
+            # Add any other -D options here if needed
+
+        working-directory: ${{ github.workspace }}
+
+      # Step 6: Compile the project using Ninja
+      - name: Compile with Ninja
+        run: ninja -C build.arm64ec
+        working-directory: ${{ github.workspace }}
+
+      # Step 7: Create a directory to stage the installation artifacts
+      - name: Prepare artifact directory
+        run: mkdir -p ${{ github.workspace }}/artifact/usr/local
+        working-directory: ${{ github.workspace }}
+
+      # Step 8: Install the compiled files into the staging directory
+      # DESTDIR redirects the installation path prefix
+      - name: Install into artifact directory
+        run: DESTDIR=${{ github.workspace }}/artifact ninja -C build.arm64ec install
+        working-directory: ${{ github.workspace }}
+
+      # Step 9: Upload the contents of the staging directory as a build artifact
+      - name: Upload ARM64EC Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          # Name the artifact distinctively, including the commit SHA
+          name: vkd3d-proton-arm64ec-${{ github.sha }}
+          # Upload everything installed under the DESTDIR/prefix path
+          path: ${{ github.workspace }}/artifact/usr/local/**
+          # Fail the workflow if the installation step produced no files
+          if-no-files-found: error
