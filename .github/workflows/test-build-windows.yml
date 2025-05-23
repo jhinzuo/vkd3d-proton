@@ -19,7 +19,6 @@ jobs:
         choco install strawberryperl -y
         Invoke-WebRequest -Uri "https://raw.githubusercontent.com/HansKristian-Work/vkd3d-proton-ci/main/glslangValidator.exe" -OutFile "C:\Strawberry\c\bin\glslangValidator.exe"
         Write-Output "C:\Strawberry\c\bin" | Out-File -FilePath "${Env:GITHUB_PATH}" -Append
-
     - name: Setup Meson
       shell: pwsh
       run: pip install meson
@@ -32,7 +31,6 @@ jobs:
           | Select-Object -ExpandProperty InstallationPath
         Write-Output "VSDEVCMD=${installationPath}\Common7\Tools\VsDevCmd.bat" `
           | Out-File -FilePath "${Env:GITHUB_ENV}" -Append
-
     - name: Build MSVC x86
       shell: pwsh
       run: |
@@ -41,7 +39,6 @@ jobs:
           | % { [System.Environment]::SetEnvironmentVariable($_[0], $_[1]) }
         meson setup -Denable_tests=True -Denable_extras=True --buildtype release --backend vs2022 build-msvc-x86
         msbuild -m build-msvc-x86/vkd3d-proton.sln
-
     - name: Build MSVC x64
       shell: pwsh
       run: |
@@ -50,3 +47,18 @@ jobs:
           | % { [System.Environment]::SetEnvironmentVariable($_[0], $_[1]) }
         meson setup -Denable_tests=True -Denable_extras=True --buildtype release --backend vs2022 build-msvc-x64
         msbuild -m build-msvc-x64/vkd3d-proton.sln
+
+    # Upload artifacts
+    - name: Upload x86 build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: vkd3d-proton-msvc-x86
+        path: build-msvc-x86/**/*.{exe,dll,lib,pdb}
+        if-no-files-found: error
+
+    - name: Upload x64 build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: vkd3d-proton-msvc-x64
+        path: build-msvc-x64/**/*.{exe,dll,lib,pdb}
+        if-no-files-found: error
